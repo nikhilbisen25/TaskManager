@@ -80,7 +80,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173, proxies /ap
   and a **JWT contract test** that verifies tokens minted by the Python service.
 - `scripts/smoke-test.sh`: full API flow through the public origin, locally or against AWS.
 
-## AWS deployment (Task 2, in progress)
+## AWS deployment (Task 2, in progress; full plan in [docs/AWS_DEPLOY_PLAN.md](docs/AWS_DEPLOY_PLAN.md))
 
 | Piece | AWS |
 |---|---|
