@@ -1,0 +1,79 @@
+# Local stack: `docker compose up --build` (or `docker-compose up --build`), then open http://localhost:8080
+# Values come from .env (copy .env.example). Defaults below let it start even without .env.
+name: task-manager
+
+services:
+  auth-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${AUTH_DB_USER:-auth}
+      POSTGRES_PASSWORD: ${AUTH_DB_PASSWORD:-auth_local_pw}
+      POSTGRES_DB: ${AUTH_DB_NAME:-authdb}
+    volumes:
+      - auth-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+
+  task-db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: ${TASK_DB_USER:-task}
+      POSTGRES_PASSWORD: ${TASK_DB_PASSWORD:-task_local_pw}
+      POSTGRES_DB: ${TASK_DB_NAME:-taskdb}
+    volumes:
+      - task-db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U $${POSTGRES_USER} -d $${POSTGRES_DB}"]
+      interval: 5s
+      timeout: 3s
+      retries: 10
+    mem_limit: 256m
+
+  auth-service:
+    build: ./auth-service
+    image: ${IMAGE_PREFIX:-task-manager}/auth-service:${IMAGE_TAG:-local}
+    environment:
+      DATABASE_URL: postgresql+psycopg://${AUTH_DB_USER:-auth}:${AUTH_DB_PASSWORD:-auth_local_pw}@auth-db:5432/${AUTH_DB_NAME:-authdb}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me-0123456789abcdef}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
+    ports:
+      - "8001:8001"   # direct access for debugging: http://localhost:8001/api/auth/docs
+    depends_on:
+      auth-db:
+        condition: service_healthy
+    mem_limit: 256m
+
+  task-service:
+    build: ./task-service
+    image: ${IMAGE_PREFIX:-task-manager}/task-service:${IMAGE_TAG:-local}
+    environment:
+      DB_URL: jdbc:postgresql://task-db:5432/${TASK_DB_NAME:-taskdb}
+      DB_USERNAME: ${TASK_DB_USER:-task}
+      DB_PASSWORD: ${TASK_DB_PASSWORD:-task_local_pw}
+      JWT_SECRET: ${JWT_SECRET:-local-dev-secret-change-me-0123456789abcdef}
+    ports:
+      - "8002:8002"   # direct access for debugging: http://localhost:8002/actuator/health
+    depends_on:
+      task-db:
+        condition: service_healthy
+    mem_limit: 512m   # JVM uses MaxRAMPercentage=60 of this
+
+  frontend:
+    build: ./frontend
+    image: ${IMAGE_PREFIX:-task-manager}/frontend:${IMAGE_TAG:-local}
+    ports:
+      - "${FRONTEND_PORT:-8080}:80"
+    depends_on:
+      auth-service:
+        condition: service_healthy
+      task-service:
+        condition: service_healthy
+    mem_limit: 64m
+
+volumes:
+  auth-db-data:
+  task-db-data:
