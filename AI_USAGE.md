@@ -50,4 +50,15 @@ with `CLAUDE.md` as standing project context.
 - Verified: auth-service 7 pytest tests pass, task-service 12 JUnit tests pass, frontend type-checks
   and builds, auth-service boots and runs register → login → `/me` natively.
 
+### 2026-11-09: First `docker compose up --build` (Task 1 verified)
+
+- Prompt (summary): "Docker is installed: build and start the stack, then verify end to end."
+- All 3 images built first time and all 5 containers reported healthy, with no code changes needed.
+- `scripts/smoke-test.sh` passed through nginx on :8080 (register, login, 401 without token, create,
+  list with filter, update, status change, delete).
+- The AI then drove the real UI in a browser: register → login → create 2 tasks → change status →
+  filter "Done" → edit (description + status) → delete. No console errors.
+- Memory with everything running: about 355 MB total (task-service about 200 MB, under its 512 MB limit).
+- Local demo user is recorded in `.env.example` (test-only values).
+
 <!-- Next entries: AWS deploy + CI, rehearsed live changes (prompt, plan corrections, time to live). -->
