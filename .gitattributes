@@ -1,5 +1,8 @@
-* text=auto
-*.sh text eol=lf
-task-service/mvnw text eol=lf
+# Keep LF in the repo and working tree (files end up in Linux containers).
+* text=auto eol=lf
 *.cmd text eol=crlf
-Dockerfile text eol=lf
+*.bat text eol=crlf
+*.png binary
+*.jpg binary
+*.ico binary
+*.jar binary

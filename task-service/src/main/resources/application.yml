@@ -1,0 +1,43 @@
+server:
+  port: ${PORT:8002}
+  # Respect X-Forwarded-* from nginx / CloudFront (correct Location headers, scheme).
+  forward-headers-strategy: framework
+  shutdown: graceful
+
+spring:
+  application:
+    name: task-service
+  datasource:
+    url: ${DB_URL:jdbc:postgresql://localhost:5433/taskdb}
+    username: ${DB_USERNAME:task}
+    password: ${DB_PASSWORD:task_local_pw}
+    hikari:
+      maximum-pool-size: 5   # small instance / small RDS
+  jpa:
+    open-in-view: false
+    hibernate:
+      ddl-auto: validate      # Flyway owns the schema
+  flyway:
+    enabled: true
+  data:
+    web:
+      pageable:
+        max-page-size: 100
+  mvc:
+    problemdetails:
+      enabled: true
+
+app:
+  jwt:
+    # Same value as auth-service's JWT_SECRET (HS256, >= 32 chars). No default on purpose.
+    secret: ${JWT_SECRET}
+
+management:
+  endpoints:
+    web:
+      exposure:
+        include: health,info
+  endpoint:
+    health:
+      probes:
+        enabled: true
