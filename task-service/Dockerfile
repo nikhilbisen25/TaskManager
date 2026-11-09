@@ -1,14 +1,14 @@
-# syntax=docker/dockerfile:1
 # ---- build stage: Maven wrapper + JDK ----
 FROM eclipse-temurin:21-jdk AS build
 WORKDIR /app
 COPY mvnw pom.xml ./
 COPY .mvn .mvn
 RUN chmod +x mvnw
-# Download dependencies first so this layer is cached until pom.xml changes.
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q dependency:go-offline
+# Download Maven + dependencies into an image layer (not a cache mount) so the layer cache, both
+# local and the GitHub Actions cache, skips this step entirely until pom.xml changes.
+RUN ./mvnw -B -q dependency:go-offline
 COPY src src
-RUN --mount=type=cache,target=/root/.m2 ./mvnw -B -q -DskipTests package
+RUN ./mvnw -B -q -DskipTests package
 
 # ---- runtime stage: JRE only, non-root ----
 FROM eclipse-temurin:21-jre-alpine

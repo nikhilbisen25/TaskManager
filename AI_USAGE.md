@@ -61,4 +61,25 @@ with `CLAUDE.md` as standing project context.
 - Memory with everything running: about 355 MB total (task-service about 200 MB, under its 512 MB limit).
 - Local demo user is recorded in `.env.example` (test-only values).
 
+### 2026-11-09: AWS deployment plan and infrastructure scripts (Task 2 prep)
+
+- Prompt (summary): "Plan the AWS deploy (EC2 + RDS + S3/CloudFront, push-to-live ≤ 5 min), then write
+  every file needed before I have AWS access." Plan: `docs/AWS_DEPLOY_PLAN.md`.
+- Decisions from the planning step (I reviewed and accepted):
+  - **GitHub OIDC** instead of AWS access keys in GitHub; **SSM Run Command** instead of SSH (port 22 closed).
+  - **ECR** instead of GHCR, so EC2 pulls with its instance role and needs no registry token.
+  - **RDS-managed master password** in Secrets Manager; app secrets generated on the instance itself.
+  - Security group allows only the **CloudFront origin-facing prefix list**, as one rule for ports
+    8001-8002 (two prefix-list rules would exceed the default 60-rule quota).
+- Problems caught while writing:
+  - BuildKit cache mounts in the task-service Dockerfile aren't kept by the GitHub Actions layer cache,
+    so every CI build would re-download all Maven deps; moved them into a normal cached layer.
+  - On RDS the master user isn't a superuser: `CREATE DATABASE ... OWNER auth` needs membership, so
+    `init.sql` grants the role to itself first. Tested against Postgres 16 as a non-superuser with
+    CREATEROLE/CREATEDB, run twice (idempotent), and checked each user can't connect to the other DB.
+  - Git Bash rewrites arguments like `/aws/service/...` into Windows paths; scripts set `MSYS_NO_PATHCONV=1`.
+- Verified locally: all scripts pass `bash -n`; workflows and compose files parse; prod compose
+  interpolation checked with dummy values; CloudFront function tested with node; distribution JSON parses.
+  **Not yet run against AWS.**
+
 <!-- Next entries: AWS deploy + CI, rehearsed live changes (prompt, plan corrections, time to live). -->

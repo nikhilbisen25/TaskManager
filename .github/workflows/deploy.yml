@@ -1,0 +1,164 @@
+# Push to main → tests + image builds in parallel → deploy changed backends to EC2 (via SSM) and the
+# frontend to S3/CloudFront → smoke test against the live URL. Target: ≤ 5 minutes.
+#
+# Auth to AWS is GitHub OIDC (no stored keys). Configuration lives in repository VARIABLES
+# (Settings → Secrets and variables → Actions → Variables), printed by `deploy/aws/setup.sh outputs`:
+#   AWS_REGION AWS_ROLE_ARN ECR_REGISTRY EC2_INSTANCE_ID DEPLOY_BUCKET WEB_BUCKET CF_DISTRIBUTION_ID CF_DOMAIN
+name: Deploy
+
+on:
+  push:
+    branches: [main]
+  workflow_dispatch:   # "Run workflow" button: rebuilds and deploys everything
+
+permissions:
+  contents: read
+  id-token: write      # for the OIDC token exchanged for AWS credentials
+
+concurrency:
+  group: deploy-production
+  cancel-in-progress: false   # never kill a deploy half-way
+
+env:
+  AWS_REGION: ${{ vars.AWS_REGION }}
+  ECR_REGISTRY: ${{ vars.ECR_REGISTRY }}
+  SHA: ${{ github.sha }}
+
+jobs:
+  changes:
+    runs-on: ubuntu-latest
+    outputs:
+      auth: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.auth == 'true' }}
+      task: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.task == 'true' }}
+      frontend: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.frontend == 'true' }}
+      infra: ${{ github.event_name == 'workflow_dispatch' || steps.filter.outputs.infra == 'true' }}
+    steps:
+      - uses: actions/checkout@v5
+      - uses: dorny/paths-filter@v3
+        id: filter
+        with:
+          filters: |
+            auth: ['auth-service/**']
+            task: ['task-service/**']
+            frontend: ['frontend/**']
+            infra: ['deploy/docker-compose.prod.yml', 'deploy/ec2/**', 'deploy/rds/**']
+
+  test:
+    uses: ./.github/workflows/ci.yml
+
+  build-auth:
+    needs: changes
+    if: needs.changes.outputs.auth == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: auth-service
+          push: true
+          provenance: false
+          tags: ${{ env.ECR_REGISTRY }}/taskmanager/auth-service:${{ env.SHA }}
+          cache-from: type=gha,scope=auth-service
+          cache-to: type=gha,scope=auth-service,mode=max
+
+  build-task:
+    needs: changes
+    if: needs.changes.outputs.task == 'true'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - uses: aws-actions/amazon-ecr-login@v2
+      - uses: docker/setup-buildx-action@v3
+      - uses: docker/build-push-action@v6
+        with:
+          context: task-service
+          push: true
+          provenance: false
+          tags: ${{ env.ECR_REGISTRY }}/taskmanager/task-service:${{ env.SHA }}
+          cache-from: type=gha,scope=task-service
+          cache-to: type=gha,scope=task-service,mode=max
+
+  deploy-backend:
+    needs: [changes, test, build-auth, build-task]
+    # Run when tests passed, no build failed (skipped is fine), and something backend-related changed.
+    if: >-
+      always() && needs.test.result == 'success' &&
+      !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&
+      (needs.changes.outputs.auth == 'true' || needs.changes.outputs.task == 'true' || needs.changes.outputs.infra == 'true')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Upload compose file + scripts for the instance
+        run: >-
+          aws s3 sync deploy/ "s3://${{ vars.DEPLOY_BUCKET }}/deploy/"
+          --exclude 'aws/*' --exclude 'cloudfront/*' --delete --only-show-errors
+      - name: Deploy on EC2 via SSM
+        run: |
+          ARGS=""
+          [ "${{ needs.build-auth.result }}" = "success" ] && ARGS="$ARGS auth=$SHA"
+          [ "${{ needs.build-task.result }}" = "success" ] && ARGS="$ARGS task=$SHA"
+          echo "deploy.sh$ARGS"
+          ./deploy/aws/ssm-run.sh "${{ vars.EC2_INSTANCE_ID }}" "$AWS_REGION" 420 "deploy ${SHA::7}" \
+            "aws s3 sync s3://${{ vars.DEPLOY_BUCKET }}/deploy/ /opt/taskmanager/ --region $AWS_REGION --only-show-errors" \
+            "bash /opt/taskmanager/ec2/deploy.sh$ARGS"
+
+  deploy-frontend:
+    needs: [changes, test]
+    if: needs.changes.outputs.frontend == 'true'
+    runs-on: ubuntu-latest
+    defaults:
+      run:
+        working-directory: frontend
+    steps:
+      - uses: actions/checkout@v5
+      - uses: actions/setup-node@v5
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: npm ci --no-audit --no-fund
+      - run: npm run build
+      - uses: aws-actions/configure-aws-credentials@v5
+        with:
+          role-to-assume: ${{ vars.AWS_ROLE_ARN }}
+          aws-region: ${{ vars.AWS_REGION }}
+      - name: Upload to S3 (hashed assets first, index.html last)
+        run: |
+          aws s3 sync dist/ "s3://${{ vars.WEB_BUCKET }}/" --exclude index.html \
+            --cache-control "public,max-age=31536000,immutable" --only-show-errors
+          aws s3 cp dist/index.html "s3://${{ vars.WEB_BUCKET }}/index.html" \
+            --cache-control "no-cache" --only-show-errors
+      - name: Invalidate CloudFront
+        # Every app route is rewritten to /index.html before the cache lookup, so this one path is enough.
+        run: |
+          ID=$(aws cloudfront create-invalidation --distribution-id "${{ vars.CF_DISTRIBUTION_ID }}" \
+            --paths /index.html --query Invalidation.Id --output text)
+          aws cloudfront wait invalidation-completed --distribution-id "${{ vars.CF_DISTRIBUTION_ID }}" --id "$ID"
+
+  smoke-test:
+    needs: [deploy-backend, deploy-frontend]
+    if: >-
+      always() && !contains(needs.*.result, 'failure') && !contains(needs.*.result, 'cancelled') &&
+      contains(needs.*.result, 'success')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v5
+      - run: ./scripts/smoke-test.sh "https://${{ vars.CF_DOMAIN }}"
+      - name: Summary
+        run: |
+          echo "### Deployed \`${SHA::7}\`" >> "$GITHUB_STEP_SUMMARY"
+          echo "Live: https://${{ vars.CF_DOMAIN }}" >> "$GITHUB_STEP_SUMMARY"

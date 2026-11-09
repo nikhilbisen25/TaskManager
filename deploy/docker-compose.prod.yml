@@ -1,0 +1,40 @@
+# Production compose file, used on the EC2 instance in /opt/taskmanager (synced from the repo by the
+# deploy workflow). Backends only: the databases are on RDS, the frontend is on S3 + CloudFront.
+#
+#   .env       written once by ec2/make-env.sh (secrets, RDS host, ECR registry); root-only, never in git
+#   tags.env   AUTH_TAG / TASK_TAG = git SHA of the image to run; maintained by ec2/deploy.sh
+#
+# Run via deploy.sh, not by hand:  bash /opt/taskmanager/ec2/deploy.sh task=<sha>
+name: taskmanager
+
+x-logging: &logging
+  driver: json-file
+  options:
+    max-size: "10m"
+    max-file: "3"
+
+services:
+  auth-service:
+    image: ${ECR_REGISTRY:?}/taskmanager/auth-service:${AUTH_TAG:?AUTH_TAG not set, deploy with auth=<sha>}
+    environment:
+      DATABASE_URL: postgresql+psycopg://auth:${AUTH_DB_PASSWORD:?}@${RDS_HOST:?}:5432/authdb?sslmode=require
+      JWT_SECRET: ${JWT_SECRET:?}
+      JWT_EXPIRE_MINUTES: ${JWT_EXPIRE_MINUTES:-60}
+    ports:
+      - "8001:8001"   # reachable only from CloudFront (security group uses the CloudFront prefix list)
+    restart: unless-stopped
+    mem_limit: 256m
+    logging: *logging
+
+  task-service:
+    image: ${ECR_REGISTRY:?}/taskmanager/task-service:${TASK_TAG:?TASK_TAG not set, deploy with task=<sha>}
+    environment:
+      DB_URL: jdbc:postgresql://${RDS_HOST:?}:5432/taskdb?sslmode=require
+      DB_USERNAME: task
+      DB_PASSWORD: ${TASK_DB_PASSWORD:?}
+      JWT_SECRET: ${JWT_SECRET:?}
+    ports:
+      - "8002:8002"
+    restart: unless-stopped
+    mem_limit: 512m   # JVM takes 60% of this (MaxRAMPercentage in the Dockerfile)
+    logging: *logging

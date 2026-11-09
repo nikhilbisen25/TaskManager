@@ -94,12 +94,20 @@ Env vars: `JWT_SECRET`, `JWT_EXPIRE_MINUTES` (auth) · auth `DATABASE_URL`
 `DB_USERNAME`, `DB_PASSWORD`, `PORT`. Compose builds these from `.env` (see `.env.example`).
 Never commit `.env` or real secrets.
 
-## Deploy (AWS, planned; see README "AWS deployment")
+## Deploy (AWS ap-south-1; full plan in docs/AWS_DEPLOY_PLAN.md)
 
-EC2 runs both backend containers (images from GHCR) via a compose file pointing at RDS; one RDS
-Postgres instance with two databases `authdb` + `taskdb`; frontend `dist/` synced to S3 behind
-CloudFront, which also routes `/api/auth/*` and `/api/tasks*` to EC2. GitHub Actions builds images,
-pushes to GHCR, SSHes to EC2 to `docker compose pull && up -d`, syncs S3 and invalidates CloudFront.
+**Deploying a change = commit + `git push` to `main`.** `.github/workflows/deploy.yml` runs tests and
+builds only the changed service images (ECR, tag = git SHA) in parallel, runs `deploy/ec2/deploy.sh`
+on EC2 through SSM (no SSH), uploads the frontend to S3 + invalidates CloudFront, then runs
+`scripts/smoke-test.sh` against `https://$CF_DOMAIN`. Config = GitHub repo *variables*; auth = OIDC role.
+
+- EC2 t3.micro: `/opt/taskmanager/{docker-compose.prod.yml, .env, tags.env, ec2/, rds/}`; backends
+  only (8001/8002, reachable from CloudFront only). Rollback: `bash /opt/taskmanager/ec2/deploy.sh rollback`
+  via Session Manager.
+- RDS Postgres 16 (one instance, `authdb` + `taskdb`, SSL required). Migrations run on container start,
+  so a schema change just needs its Alembic/Flyway file.
+- CloudFront: default → S3 (SPA rewrite function), `/api/auth/*` → EC2:8001, `/api/tasks*` → EC2:8002.
+- Infra changes: `deploy/aws/setup.sh <step>` (re-runnable); `deploy/aws/teardown.sh` deletes everything.
 
 ## Working rules for the AI
 

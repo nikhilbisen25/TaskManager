@@ -38,22 +38,28 @@ Region: **ap-south-1 (Mumbai)**, the closest region to you, so the live demo sta
 | **GitHub OIDC → IAM role** | No long-lived AWS keys stored in GitHub; role limited to ECR push, S3 sync, invalidation, SSM send-command | n/a |
 | **ECR** for images (instead of GHCR) | The EC2 instance role pulls with no token; everything stays in AWS | GHCR works too, but needs public packages or a PAT on EC2 |
 | Images tagged with the **git SHA** | Every deploy is traceable; rollback = redeploy the previous SHA | n/a |
-| Secrets in a **root-only `.env` on EC2** | Simple; never in git or GitHub | SSM Parameter Store / Secrets Manager |
+| **RDS master password managed by RDS in Secrets Manager** (`--manage-master-user-password`) | Nobody types or sees it; the EC2 role reads it once to create the app users | n/a |
+| App secrets (JWT secret, DB user passwords) **generated on the EC2 instance** into a root-only `.env` | They never pass through a laptop, GitHub or chat; never in git | SSM Parameter Store / Secrets Manager for app secrets too |
 | **Migrations run on container start** (Alembic, Flyway) | A deploy that adds a column (e.g. live "priority" change) needs no manual DB step | A separate migration job before the rollout |
 
-## Files I'll add to the repo
+## Files in the repo
 
 | File | Purpose |
 |---|---|
-| `deploy/docker-compose.prod.yml` | Backends only, images `${ECR}/…:${TAG}`, env from `/opt/taskmanager/.env`, `restart: unless-stopped` |
-| `deploy/ec2/user-data.sh` | First boot: install Docker + compose plugin, 1 GB swap, `/opt/taskmanager` |
-| `deploy/ec2/deploy.sh <sha>` | ECR login → pull → `up -d` → wait for both health checks → print result (non-zero exit on failure) |
-| `deploy/rds/init.sql` | Creates `authdb`/`taskdb`, their users and grants (run once from EC2 with a `postgres` container) |
+| `deploy/docker-compose.prod.yml` | Backends only, images `${ECR_REGISTRY}/taskmanager/<svc>:<sha>`, RDS over SSL, `restart: unless-stopped`, memory limits |
+| `deploy/ec2/user-data.sh` | First boot: Docker + compose plugin, 1 GB swap, `/opt/taskmanager` |
+| `deploy/ec2/make-env.sh` | Writes `/opt/taskmanager/.env`; generates secrets on the instance; re-runs keep them |
+| `deploy/ec2/deploy.sh` | `deploy.sh auth=<sha> task=<sha>` · `deploy.sh rollback`: ECR login → pull → `up -d --wait` (fails if unhealthy, prints logs) |
+| `deploy/rds/init.sql`, `init-db.sh` | Creates `authdb`/`taskdb` + users, each user can connect only to its own DB; reads the master secret with the instance role |
 | `deploy/cloudfront/spa-rewrite.js` | CloudFront Function: `/login`, `/register` etc. → `/index.html`, leaves files alone |
-| `deploy/aws/setup.sh` | AWS CLI script that creates the resources in order (each step re-runnable), prints the CloudFront URL |
-| `deploy/aws/teardown.sh` | Deletes everything after the interview process (stops costs) |
-| `.github/workflows/ci.yml` | On PRs/pushes: pytest, `mvnw test`, frontend build, in parallel |
-| `.github/workflows/deploy.yml` | On push to `main` (+ manual button): tests → build changed images (Buildx + GHA cache) → ECR → SSM deploy → S3 sync + invalidation → `smoke-test.sh` against the live URL |
+| `deploy/aws/setup.sh <step>` | AWS CLI, one re-runnable step at a time: `network rds ecr buckets iam-ec2 ec2 cloudfront github bootstrap outputs` |
+| `deploy/aws/ssm-run.sh` | Runs commands on EC2 via SSM Run Command and waits (used by setup and the workflow) |
+| `deploy/aws/teardown.sh --yes-delete-everything` | Deletes everything after the interview process (stops costs) |
+| `.github/workflows/ci.yml` | On PRs/branch pushes (and called by deploy): pytest, `mvnw test`, frontend build, in parallel |
+| `.github/workflows/deploy.yml` | On push to `main` (+ "Run workflow" button): tests ‖ build changed images (Buildx + GHA cache) → ECR → SSM deploy; frontend → S3 + invalidation; then `smoke-test.sh` against the live URL |
+
+A small private **deploy bucket** carries the compose file and scripts to the instance (the workflow
+syncs it, EC2 pulls it), so infrastructure files are versioned in git like the code.
 
 ## Pipeline timing budget (target ≤ 5 min push → live)
 
@@ -93,20 +99,31 @@ fire on *gross* usage even when credits cover it; that's fine, it's an early war
    `aws configure sso`) yourself, with region `ap-south-1`. I never see or type the keys.
 4. Create the **empty GitHub repo** and tell me its name. I add the remote; I push only when you say so.
 5. Approve each resource-creating step when I run `setup.sh` (it costs money, so it goes step by step).
-6. Choose the **RDS master password** yourself when prompted (it is typed into the AWS CLI prompt or
-   console, not into chat).
+   No database password to choose: RDS generates and stores the master password in Secrets Manager.
+6. Add the 8 values printed by `setup.sh outputs` as **GitHub Actions variables** (repo → Settings →
+   Secrets and variables → Actions → Variables). They are not secrets.
 
 **Me:** write all files above, run the setup with your approval at each step, wire up the GitHub
 OIDC role and the workflow, measure the push-to-live time, update README/CLAUDE.md/AI_USAGE.md.
 
 ## Order of work (Wednesday)
 
-1. Push repo to GitHub → CI workflow green (proves tests run in the cloud).
-2. `setup.sh`: VPC default + security groups → RDS (takes ~10 min, so start it first) → ECR repos →
-   EC2 with instance role + user-data + Elastic IP → S3 bucket → CloudFront (OAC, function, 3 behaviours)
-   → GitHub OIDC provider + deploy role.
-3. Once RDS is up: run `init.sql` via SSM, write `/opt/taskmanager/.env` on EC2.
-4. First deploy via the workflow → `smoke-test.sh` against the CloudFront URL → UI check.
+1. Push repo to GitHub. The Deploy workflow will fail until AWS exists; that's expected.
+2. From Git Bash in the repo root (`GITHUB_REPO=owner/name` set):
+   ```bash
+   ./deploy/aws/setup.sh network      # security groups
+   ./deploy/aws/setup.sh rds          # starts RDS creation first: it takes ~10 min
+   ./deploy/aws/setup.sh ecr
+   ./deploy/aws/setup.sh buckets
+   ./deploy/aws/setup.sh iam-ec2
+   ./deploy/aws/setup.sh ec2
+   ./deploy/aws/setup.sh cloudfront
+   ./deploy/aws/setup.sh github
+   ./deploy/aws/setup.sh bootstrap    # waits for RDS, writes .env on EC2, creates both databases
+   ./deploy/aws/setup.sh outputs      # values for the GitHub variables + the live URL
+   ```
+3. Add the GitHub variables → Actions → Deploy → **Run workflow** (first deploy builds everything).
+4. Smoke test runs at the end of the workflow; then a UI check in the browser.
 5. Make a trivial change, push, time it. Then document the URL + timing.
 
 ## Risks and fallbacks for the live session
