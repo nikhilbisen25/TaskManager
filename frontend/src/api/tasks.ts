@@ -1,15 +1,24 @@
-import type { Page, Task, TaskInput, TaskStatus } from '../types'
+import type { Page, Task, TaskInput, TaskPriority, TaskStatus } from '../types'
 import { api } from './client'
 
 export interface TaskQuery {
   status?: TaskStatus
+  priority?: TaskPriority
+  dueBefore?: string // yyyy-MM-dd, inclusive
   page?: number
   size?: number
 }
 
 export async function listTasks(query: TaskQuery = {}): Promise<Page<Task>> {
   const { data } = await api.get<Page<Task>>('/tasks', {
-    params: { status: query.status, page: query.page ?? 0, size: query.size ?? 10, sort: 'createdAt,desc' },
+    params: {
+      status: query.status,
+      priority: query.priority,
+      dueBefore: query.dueBefore,
+      page: query.page ?? 0,
+      size: query.size ?? 10,
+      sort: 'createdAt,desc',
+    },
   })
   return data
 }

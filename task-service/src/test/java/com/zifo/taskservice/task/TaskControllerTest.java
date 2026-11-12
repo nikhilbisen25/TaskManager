@@ -14,6 +14,7 @@ import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.
 import static org.springframework.test.web.servlet.result.MockMvcResultMatchers.status;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.List;
 import java.util.UUID;
 
@@ -50,7 +51,7 @@ class TaskControllerTest {
 
     private static TaskResponse sample(Long id, TaskStatus status) {
         var now = Instant.parse("2026-11-09T10:00:00Z");
-        return new TaskResponse(id, "Write tests", "desc", status, now, now);
+        return new TaskResponse(id, "Write tests", "desc", status, TaskPriority.MEDIUM, null, now, now);
     }
 
     @Test
@@ -93,7 +94,7 @@ class TaskControllerTest {
 
     @Test
     void listPassesStatusFilterAndReturnsPage() throws Exception {
-        when(service.list(eq(OWNER), eq(TaskStatus.DONE), any(Pageable.class)))
+        when(service.list(eq(OWNER), eq(new TaskFilter(TaskStatus.DONE, null, null)), any(Pageable.class)))
                 .thenReturn(new PageImpl<>(List.of(sample(1L, TaskStatus.DONE)), PageRequest.of(0, 20), 1));
 
         mvc.perform(get("/api/tasks").param("status", "DONE")
@@ -102,6 +103,48 @@ class TaskControllerTest {
                 .andExpect(jsonPath("$.content[0].status").value("DONE"))
                 .andExpect(jsonPath("$.totalElements").value(1))
                 .andExpect(jsonPath("$.page").value(0));
+    }
+
+    @Test
+    void listPassesPriorityAndDueBeforeFilters() throws Exception {
+        var filter = new TaskFilter(null, TaskPriority.HIGH, LocalDate.of(2026, 11, 20));
+        when(service.list(eq(OWNER), eq(filter), any(Pageable.class)))
+                .thenReturn(new PageImpl<>(List.of(), PageRequest.of(0, 20), 0));
+
+        mvc.perform(get("/api/tasks").param("priority", "HIGH").param("dueBefore", "2026-11-20")
+                        .with(jwt().jwt(j -> j.subject(OWNER.toString()))))
+                .andExpect(status().isOk())
+                .andExpect(jsonPath("$.totalElements").value(0));
+
+        verify(service).list(eq(OWNER), eq(filter), any(Pageable.class));
+    }
+
+    @Test
+    void createAcceptsPriorityAndDueDate() throws Exception {
+        var now = Instant.parse("2026-11-09T10:00:00Z");
+        var due = LocalDate.of(2026, 11, 20);
+        when(service.create(eq(OWNER), any(CreateTaskRequest.class)))
+                .thenReturn(new TaskResponse(5L, "Ship", null, TaskStatus.TODO, TaskPriority.HIGH, due, now, now));
+
+        mvc.perform(post("/api/tasks")
+                        .with(jwt().jwt(j -> j.subject(OWNER.toString())))
+                        .contentType(MediaType.APPLICATION_JSON)
+                        .content("{\"title\":\"Ship\",\"priority\":\"HIGH\",\"dueDate\":\"2026-11-20\"}"))
+                .andExpect(status().isCreated())
+                .andExpect(jsonPath("$.priority").value("HIGH"))
+                .andExpect(jsonPath("$.dueDate").value("2026-11-20"));
+
+        var captor = org.mockito.ArgumentCaptor.forClass(CreateTaskRequest.class);
+        verify(service).create(eq(OWNER), captor.capture());
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().priority()).isEqualTo(TaskPriority.HIGH);
+        org.assertj.core.api.Assertions.assertThat(captor.getValue().dueDate()).isEqualTo(due);
+    }
+
+    @Test
+    void invalidDueBeforeReturns400() throws Exception {
+        mvc.perform(get("/api/tasks").param("dueBefore", "20-11-2026")
+                        .with(jwt().jwt(j -> j.subject(OWNER.toString()))))
+                .andExpect(status().isBadRequest());
     }
 
     @Test

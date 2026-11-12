@@ -10,11 +10,23 @@ export const STATUS_LABELS: Record<TaskStatus, string> = {
   DONE: 'Done',
 }
 
+export type TaskPriority = 'LOW' | 'MEDIUM' | 'HIGH'
+
+export const TASK_PRIORITIES: TaskPriority[] = ['LOW', 'MEDIUM', 'HIGH']
+
+export const PRIORITY_LABELS: Record<TaskPriority, string> = {
+  LOW: 'Low',
+  MEDIUM: 'Medium',
+  HIGH: 'High',
+}
+
 export interface Task {
   id: number
   title: string
   description: string | null
   status: TaskStatus
+  priority: TaskPriority
+  dueDate: string | null // yyyy-MM-dd
   createdAt: string
   updatedAt: string
 }
@@ -23,6 +35,8 @@ export interface TaskInput {
   title: string
   description: string | null
   status: TaskStatus
+  priority: TaskPriority
+  dueDate: string | null
 }
 
 export interface Page<T> {

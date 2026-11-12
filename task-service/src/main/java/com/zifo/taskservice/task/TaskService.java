@@ -1,7 +1,6 @@
 package com.zifo.taskservice.task;
 
-import static com.zifo.taskservice.task.TaskSpecifications.hasStatus;
-import static com.zifo.taskservice.task.TaskSpecifications.ownedBy;
+import static com.zifo.taskservice.task.TaskSpecifications.matching;
 
 import java.util.UUID;
 
@@ -26,9 +25,8 @@ public class TaskService {
     }
 
     @Transactional(readOnly = true)
-    public Page<TaskResponse> list(UUID ownerId, TaskStatus status, Pageable pageable) {
-        return repository.findAll(ownedBy(ownerId).and(hasStatus(status)), pageable)
-                .map(TaskResponse::from);
+    public Page<TaskResponse> list(UUID ownerId, TaskFilter filter, Pageable pageable) {
+        return repository.findAll(matching(ownerId, filter), pageable).map(TaskResponse::from);
     }
 
     @Transactional(readOnly = true)
@@ -42,6 +40,8 @@ public class TaskService {
         task.setTitle(req.title().strip());
         task.setDescription(req.description());
         task.setStatus(req.status() != null ? req.status() : TaskStatus.TODO);
+        task.setPriority(req.priority() != null ? req.priority() : TaskPriority.MEDIUM);
+        task.setDueDate(req.dueDate());
         return TaskResponse.from(repository.save(task));
     }
 
@@ -50,6 +50,10 @@ public class TaskService {
         task.setTitle(req.title().strip());
         task.setDescription(req.description());
         task.setStatus(req.status());
+        if (req.priority() != null) {
+            task.setPriority(req.priority());
+        }
+        task.setDueDate(req.dueDate());
         return TaskResponse.from(repository.saveAndFlush(task));
     }
 

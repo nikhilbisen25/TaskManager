@@ -1,6 +1,7 @@
 package com.zifo.taskservice.task;
 
 import java.time.Instant;
+import java.time.LocalDate;
 import java.util.UUID;
 
 import jakarta.persistence.Column;
@@ -36,6 +37,13 @@ public class Task {
     @Enumerated(EnumType.STRING)
     @Column(nullable = false, length = 20)
     private TaskStatus status = TaskStatus.TODO;
+
+    @Enumerated(EnumType.STRING)
+    @Column(nullable = false, length = 10)
+    private TaskPriority priority = TaskPriority.MEDIUM;
+
+    @Column(name = "due_date")
+    private LocalDate dueDate;
 
     @Column(name = "created_at", nullable = false, updatable = false)
     private Instant createdAt;
@@ -92,6 +100,22 @@ public class Task {
 
     public void setStatus(TaskStatus status) {
         this.status = status;
+    }
+
+    public TaskPriority getPriority() {
+        return priority;
+    }
+
+    public void setPriority(TaskPriority priority) {
+        this.priority = priority;
+    }
+
+    public LocalDate getDueDate() {
+        return dueDate;
+    }
+
+    public void setDueDate(LocalDate dueDate) {
+        this.dueDate = dueDate;
     }
 
     public Instant getCreatedAt() {

@@ -7,6 +7,7 @@ import static org.mockito.Mockito.never;
 import static org.mockito.Mockito.verify;
 import static org.mockito.Mockito.when;
 
+import java.time.LocalDate;
 import java.util.Optional;
 import java.util.UUID;
 
@@ -18,6 +19,7 @@ import org.mockito.Mock;
 import org.mockito.junit.jupiter.MockitoExtension;
 
 import com.zifo.taskservice.task.dto.TaskDtos.CreateTaskRequest;
+import com.zifo.taskservice.task.dto.TaskDtos.UpdateTaskRequest;
 
 @ExtendWith(MockitoExtension.class)
 class TaskServiceTest {
@@ -42,6 +44,38 @@ class TaskServiceTest {
         assertThat(captor.getValue().getOwnerId()).isEqualTo(OWNER);
         assertThat(result.title()).isEqualTo("Buy milk");
         assertThat(result.status()).isEqualTo(TaskStatus.TODO);
+        assertThat(result.priority()).isEqualTo(TaskPriority.MEDIUM);
+        assertThat(result.dueDate()).isNull();
+    }
+
+    @Test
+    void createStoresPriorityAndDueDate() {
+        when(repository.save(any(Task.class))).thenAnswer(inv -> inv.getArgument(0));
+        var due = LocalDate.of(2026, 11, 20);
+
+        var result = service.create(OWNER, new CreateTaskRequest("Ship", null, null, TaskPriority.HIGH, due));
+
+        assertThat(result.priority()).isEqualTo(TaskPriority.HIGH);
+        assertThat(result.dueDate()).isEqualTo(due);
+    }
+
+    @Test
+    void updateWithoutPriorityKeepsCurrentPriorityAndClearsDueDate() {
+        var task = new Task();
+        task.setId(9L);
+        task.setOwnerId(OWNER);
+        task.setTitle("Old");
+        task.setPriority(TaskPriority.HIGH);
+        task.setDueDate(LocalDate.of(2026, 11, 20));
+        when(repository.findByIdAndOwnerId(9L, OWNER)).thenReturn(Optional.of(task));
+        when(repository.saveAndFlush(task)).thenReturn(task);
+
+        // An older client (e.g. scripts/smoke-test.sh) sends no priority and no dueDate.
+        var result = service.update(OWNER, 9L, new UpdateTaskRequest("New", null, TaskStatus.IN_PROGRESS, null, null));
+
+        assertThat(result.priority()).isEqualTo(TaskPriority.HIGH);
+        assertThat(result.dueDate()).isNull();
+        assertThat(result.title()).isEqualTo("New");
     }
 
     @Test

@@ -1,5 +1,6 @@
 package com.zifo.taskservice.task;
 
+import java.time.LocalDate;
 import java.util.UUID;
 
 import org.springframework.data.jpa.domain.Specification;
@@ -16,5 +17,21 @@ public final class TaskSpecifications {
 
     public static Specification<Task> hasStatus(TaskStatus status) {
         return (root, query, cb) -> status == null ? null : cb.equal(root.get("status"), status);
+    }
+
+    public static Specification<Task> hasPriority(TaskPriority priority) {
+        return (root, query, cb) -> priority == null ? null : cb.equal(root.get("priority"), priority);
+    }
+
+    /** Due on or before the given date (inclusive). Tasks without a due date never match. */
+    public static Specification<Task> dueOnOrBefore(LocalDate date) {
+        return (root, query, cb) -> date == null ? null : cb.lessThanOrEqualTo(root.get("dueDate"), date);
+    }
+
+    public static Specification<Task> matching(UUID ownerId, TaskFilter filter) {
+        return ownedBy(ownerId)
+                .and(hasStatus(filter.status()))
+                .and(hasPriority(filter.priority()))
+                .and(dueOnOrBefore(filter.dueBefore()));
     }
 }

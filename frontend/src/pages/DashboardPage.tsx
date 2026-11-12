@@ -3,8 +3,26 @@ import { errorMessage } from '../api/client'
 import { createTask, deleteTask, listTasks, updateTask, updateTaskStatus } from '../api/tasks'
 import { useAuth } from '../auth/AuthContext'
 import { TaskForm } from '../components/TaskForm'
-import { Button, ErrorBanner, StatusBadge } from '../components/ui'
-import { STATUS_LABELS, TASK_STATUSES, type Page, type Task, type TaskInput, type TaskStatus } from '../types'
+import { Button, ErrorBanner, PriorityBadge, StatusBadge } from '../components/ui'
+import {
+  PRIORITY_LABELS,
+  STATUS_LABELS,
+  TASK_PRIORITIES,
+  TASK_STATUSES,
+  type Page,
+  type Task,
+  type TaskInput,
+  type TaskPriority,
+  type TaskStatus,
+} from '../types'
+
+/** Today as yyyy-MM-dd in the user's local time zone (dueDate has no time part). */
+function todayIso(): string {
+  const d = new Date()
+  return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`
+}
+
+const isOverdue = (task: Task) => !!task.dueDate && task.status !== 'DONE' && task.dueDate < todayIso()
 
 const PAGE_SIZE = 10
 // Set by the deploy workflow (VITE_APP_VERSION = git SHA) so you can see which commit is live.
@@ -14,6 +32,8 @@ export function DashboardPage() {
   const { user, logout } = useAuth()
   const [data, setData] = useState<Page<Task> | null>(null)
   const [filter, setFilter] = useState<TaskStatus | ''>('')
+  const [priorityFilter, setPriorityFilter] = useState<TaskPriority | ''>('')
+  const [dueBefore, setDueBefore] = useState('')
   const [page, setPage] = useState(0)
   const [editingId, setEditingId] = useState<number | null>(null)
   const [error, setError] = useState<string | null>(null)
@@ -22,14 +42,22 @@ export function DashboardPage() {
   const load = useCallback(async () => {
     setLoading(true)
     try {
-      setData(await listTasks({ status: filter || undefined, page, size: PAGE_SIZE }))
+      setData(
+        await listTasks({
+          status: filter || undefined,
+          priority: priorityFilter || undefined,
+          dueBefore: dueBefore || undefined,
+          page,
+          size: PAGE_SIZE,
+        }),
+      )
       setError(null)
     } catch (err) {
       setError(errorMessage(err, 'Could not load tasks'))
     } finally {
       setLoading(false)
     }
-  }, [filter, page])
+  }, [filter, priorityFilter, dueBefore, page])
 
   useEffect(() => {
     load()
@@ -98,6 +126,51 @@ export function DashboardPage() {
             {loading && <span className="text-sm text-slate-400">Loading…</span>}
           </div>
 
+          <div className="mb-4 flex flex-wrap items-center gap-3 text-sm">
+            <label className="flex items-center gap-2 text-slate-600">
+              Priority
+              <select
+                aria-label="Filter by priority"
+                value={priorityFilter}
+                onChange={(e) => {
+                  setPriorityFilter(e.target.value as TaskPriority | '')
+                  setPage(0)
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1.5"
+              >
+                <option value="">Any</option>
+                {TASK_PRIORITIES.map((p) => (
+                  <option key={p} value={p}>{PRIORITY_LABELS[p]}</option>
+                ))}
+              </select>
+            </label>
+            <label className="flex items-center gap-2 text-slate-600">
+              Due on or before
+              <input
+                type="date"
+                aria-label="Filter by due date"
+                value={dueBefore}
+                onChange={(e) => {
+                  setDueBefore(e.target.value)
+                  setPage(0)
+                }}
+                className="rounded-lg border border-slate-300 bg-white px-2 py-1"
+              />
+            </label>
+            {(priorityFilter || dueBefore) && (
+              <button
+                onClick={() => {
+                  setPriorityFilter('')
+                  setDueBefore('')
+                  setPage(0)
+                }}
+                className="text-indigo-600 hover:underline"
+              >
+                Clear
+              </button>
+            )}
+          </div>
+
           <ErrorBanner message={error} />
 
           {data && data.content.length === 0 && (
@@ -119,11 +192,19 @@ export function DashboardPage() {
                           {task.title}
                         </h3>
                         <StatusBadge status={task.status} />
+                        <PriorityBadge priority={task.priority} />
                       </div>
                       {task.description && (
                         <p className="mt-1 whitespace-pre-wrap text-sm text-slate-600">{task.description}</p>
                       )}
                       <p className="mt-2 text-xs text-slate-400">
+                        {task.dueDate && (
+                          <span className={isOverdue(task) ? 'font-semibold text-red-600' : 'text-slate-600'}>
+                            {isOverdue(task) ? 'Overdue · ' : 'Due '}
+                            {new Date(`${task.dueDate}T00:00:00`).toLocaleDateString()}
+                            {' · '}
+                          </span>
+                        )}
                         Updated {new Date(task.updatedAt).toLocaleString()}
                       </p>
                     </div>

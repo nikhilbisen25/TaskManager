@@ -1,7 +1,10 @@
 package com.zifo.taskservice.task;
 
 import java.net.URI;
+import java.time.LocalDate;
 import java.util.UUID;
+
+import org.springframework.format.annotation.DateTimeFormat;
 
 import org.springframework.data.domain.Pageable;
 import org.springframework.data.domain.Sort;
@@ -38,13 +41,16 @@ public class TaskController {
         this.service = service;
     }
 
-    /** GET /api/tasks?status=TODO&page=0&size=20&sort=createdAt,desc */
+    /** GET /api/tasks?status=TODO&priority=HIGH&dueBefore=2026-11-20&page=0&size=20&sort=createdAt,desc */
     @GetMapping
     public PageResponse<TaskResponse> list(
             @AuthenticationPrincipal Jwt jwt,
             @RequestParam(required = false) TaskStatus status,
+            @RequestParam(required = false) TaskPriority priority,
+            @RequestParam(required = false) @DateTimeFormat(iso = DateTimeFormat.ISO.DATE) LocalDate dueBefore,
             @PageableDefault(size = 20, sort = "createdAt", direction = Sort.Direction.DESC) Pageable pageable) {
-        return PageResponse.from(service.list(ownerId(jwt), status, pageable));
+        var filter = new TaskFilter(status, priority, dueBefore);
+        return PageResponse.from(service.list(ownerId(jwt), filter, pageable));
     }
 
     @GetMapping("/{id}")
