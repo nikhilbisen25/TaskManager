@@ -7,6 +7,8 @@ import { Button, ErrorBanner, StatusBadge } from '../components/ui'
 import { STATUS_LABELS, TASK_STATUSES, type Page, type Task, type TaskInput, type TaskStatus } from '../types'
 
 const PAGE_SIZE = 10
+// Set by the deploy workflow (VITE_APP_VERSION = git SHA) so you can see which commit is live.
+const BUILD_VERSION = (import.meta.env.VITE_APP_VERSION ?? 'local').slice(0, 7)
 
 export function DashboardPage() {
   const { user, logout } = useAuth()
@@ -160,6 +162,9 @@ export function DashboardPage() {
           )}
         </section>
       </main>
+      <footer className="pb-6 text-center text-xs text-slate-400">
+        Build {BUILD_VERSION}
+      </footer>
     </div>
   )
 }
