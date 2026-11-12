@@ -111,4 +111,16 @@ with `CLAUDE.md` as standing project context.
 - Added a "Build <sha>" footer so the deployed commit is visible in the UI, then pushed it as a timing
   test: **82 s push → live** (path filters skipped both image builds and the backend rollout).
 
+### 2026-11-12: Rehearsal of the live change (priority + due date + filters)
+
+- Done on branch `rehearsal/priority-due-date` (never merged: its Flyway V2 would clash on RDS with
+  the real V2 written live). Prompt and loop are in `docs/LIVE_CHANGE_PLAYBOOK.md`.
+- Design choices made during the plan step: a `TaskFilter` record instead of growing method params;
+  NOT NULL `priority` with a DEFAULT so existing rows migrate; update without `priority` keeps the
+  current value so older clients (the smoke test) keep working; `dueBefore` is inclusive.
+- Result: 15 files, +360/-35; 17 backend tests pass (5 new); V2 applied to a DB with existing data;
+  filters checked over the API; UI checked in the browser (badge, overdue, filters, edit pre-fill).
+- Learned for the call: skip the local docker rebuild (6.5 min on this laptop); unit tests locally
+  then let CI build the images.
+
 <!-- Next entries: AWS deploy + CI, rehearsed live changes (prompt, plan corrections, time to live). -->
