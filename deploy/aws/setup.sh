@@ -295,16 +295,31 @@ step_github() {
   else ok "OIDC provider exists"; fi
 
   # Only workflows running on the main branch of this one repository can assume the role.
+  # GitHub sends one of two "sub" formats: the classic  repo:OWNER/REPO:ref:...  and the newer
+  # immutable-ID form  repo:OWNER@<ownerId>/REPO@<repoId>:ref:...  (seen in CloudTrail on 2026-11-12).
+  # Trust both; the ID form also stops a deleted-and-recreated repo with the same name from matching.
+  local ids owner_id repo_id subs
+  ids=$(curl -fsS "https://api.github.com/repos/$GITHUB_REPO" \
+    | sed -n 's/^  "id": \([0-9]*\),/repo \1/p; s/^    "id": \([0-9]*\),/owner \1/p')
+  repo_id=$(printf '%s\n' "$ids" | sed -n 's/^repo //p' | head -1)
+  owner_id=$(printf '%s\n' "$ids" | sed -n 's/^owner //p' | head -1)
+  subs="\"repo:$GITHUB_REPO:ref:refs/heads/main\""
+  if [ -n "$repo_id" ] && [ -n "$owner_id" ]; then
+    subs="$subs,\"repo:${GITHUB_REPO%%/*}@$owner_id/${GITHUB_REPO#*/}@$repo_id:ref:refs/heads/main\""
+  else
+    ok "WARNING: could not read repo/owner ids from the GitHub API; trusting the classic sub format only"
+  fi
   local trust="{
     \"Version\":\"2012-10-17\",
     \"Statement\":[{\"Effect\":\"Allow\",\"Principal\":{\"Federated\":\"$provider_arn\"},
       \"Action\":\"sts:AssumeRoleWithWebIdentity\",
       \"Condition\":{
         \"StringEquals\":{\"token.actions.githubusercontent.com:aud\":\"sts.amazonaws.com\",
-                          \"token.actions.githubusercontent.com:sub\":\"repo:$GITHUB_REPO:ref:refs/heads/main\"}}}]}"
+                          \"token.actions.githubusercontent.com:sub\":[$subs]}}}]}"
+  ok "trusted sub claims: $subs"
   if ! aws iam get-role --role-name "$P-github-deploy" >/dev/null 2>&1; then
     aws iam create-role --role-name "$P-github-deploy" --assume-role-policy-document "$trust" >/dev/null
-    ok "created role $P-github-deploy (trusts repo:$GITHUB_REPO:ref:refs/heads/main)"
+    ok "created role $P-github-deploy"
   else
     aws iam update-assume-role-policy --role-name "$P-github-deploy" --policy-document "$trust"
     ok "role exists, trust policy updated for $GITHUB_REPO"

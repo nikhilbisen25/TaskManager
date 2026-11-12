@@ -93,4 +93,15 @@ with `CLAUDE.md` as standing project context.
   Authorization header), SPA routes `/login` and `/register` load, and the EC2 ports are NOT reachable
   directly (only via CloudFront).
 
+### 2026-11-12: Debugging the first GitHub Actions deploy (OIDC trust)
+
+- Symptom: every job failed at `configure-aws-credentials`, even on a re-run after the variables were set.
+- The AI didn't guess: it read **CloudTrail** `AssumeRoleWithWebIdentity` events, which showed AccessDenied
+  with the token's subject `repo:nikhilbisen25@<ownerId>/TaskManager@<repoId>:ref:refs/heads/main`.
+  GitHub now issues this immutable-ID subject format, while the role trusted only
+  `repo:nikhilbisen25/TaskManager:ref:refs/heads/main`.
+- Fix: `setup.sh github` reads both IDs from the GitHub API and trusts both formats (the ID form is
+  stricter: a deleted and re-created repo with the same name can't match). One command, no console clicks.
+- Lesson: for auth failures, look at the server-side audit log before changing config.
+
 <!-- Next entries: AWS deploy + CI, rehearsed live changes (prompt, plan corrections, time to live). -->
