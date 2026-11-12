@@ -82,4 +82,15 @@ with `CLAUDE.md` as standing project context.
   interpolation checked with dummy values; CloudFront function tested with node; distribution JSON parses.
   **Not yet run against AWS.**
 
+### 2026-11-12: AWS infrastructure created and first live deploy
+
+- Ran `deploy/aws/setup.sh` steps network → rds → ecr → buckets → iam-ec2 → ec2 → cloudfront → github →
+  bootstrap: every step worked on the first run. Bootstrap created `authdb`/`taskdb` on RDS over SSM
+  using the RDS-managed master secret (nobody typed a DB password).
+- First deploy done from the laptop (images pushed to ECR, `deploy.sh` via SSM, frontend to S3) to
+  check AWS before GitHub was connected: both containers healthy on EC2 against RDS in ~25 s.
+- Verified: `smoke-test.sh https://d1mc2pgndcz3na.cloudfront.net` passes (so CloudFront forwards the
+  Authorization header), SPA routes `/login` and `/register` load, and the EC2 ports are NOT reachable
+  directly (only via CloudFront).
+
 <!-- Next entries: AWS deploy + CI, rehearsed live changes (prompt, plan corrections, time to live). -->

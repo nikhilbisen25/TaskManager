@@ -1,5 +1,7 @@
 # Task Manager: microservices demo
 
+**Live:** https://d1mc2pgndcz3na.cloudfront.net (AWS ap-south-1: CloudFront + S3, EC2, RDS)
+
 A small task management app: users register, log in, and manage their own tasks.
 Built as two independently deployable services plus a React SPA.
 
@@ -80,7 +82,7 @@ cd frontend && npm install && npm run dev   # http://localhost:5173, proxies /ap
   and a **JWT contract test** that verifies tokens minted by the Python service.
 - `scripts/smoke-test.sh`: full API flow through the public origin, locally or against AWS.
 
-## AWS deployment (Task 2, in progress; full plan in [docs/AWS_DEPLOY_PLAN.md](docs/AWS_DEPLOY_PLAN.md))
+## AWS deployment (Task 2; full plan in [docs/AWS_DEPLOY_PLAN.md](docs/AWS_DEPLOY_PLAN.md))
 
 | Piece | AWS |
 |---|---|
