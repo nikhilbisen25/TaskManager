@@ -104,4 +104,11 @@ with `CLAUDE.md` as standing project context.
   stricter: a deleted and re-created repo with the same name can't match). One command, no console clicks.
 - Lesson: for auth failures, look at the server-side audit log before changing config.
 
+### 2026-11-12: Pipeline green and timed
+
+- Full "Run workflow" deploy (all images, cold cache): **3 min 25 s**; EC2 runs the SHA-tagged images
+  built by CI; the smoke test passes against the live URL.
+- Added a "Build <sha>" footer so the deployed commit is visible in the UI, then pushed it as a timing
+  test: **82 s push → live** (path filters skipped both image builds and the backend rollout).
+
 <!-- Next entries: AWS deploy + CI, rehearsed live changes (prompt, plan corrections, time to live). -->

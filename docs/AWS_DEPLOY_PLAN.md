@@ -71,7 +71,13 @@ syncs it, EC2 pulls it), so infrastructure files are versioned in git like the c
 | EC2 pull + restart + health wait | ~1-1.5 min | Spring Boot cold start on t3.micro is the slowest part |
 | Live smoke test | ~10 s | `scripts/smoke-test.sh https://dxxxx.cloudfront.net` |
 
-We'll measure the real number on Wednesday and rehearse against it on Thursday.
+**Measured on 2026-11-12:**
+
+| Change | Push → live | Notes |
+|---|---|---|
+| Frontend only (footer build stamp) | **82 s** | tests ‖ S3 upload + invalidation, smoke test; image builds skipped |
+| Everything, cold cache ("Run workflow") | **3 min 25 s** | task-service image build 126 s was the long pole |
+| Backend + frontend, warm cache (e.g. priority + due date) | ~2.5-3 min expected | build-task with cached Maven layer + 50 s EC2 rollout |
 
 ## Cost (ap-south-1, approximate, check the AWS pricing pages)
 
