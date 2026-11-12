@@ -2,6 +2,7 @@
 
 Task Management App built as microservices for the Zifo hands-on exercise.
 Read this first; it is kept short on purpose so short prompts work.
+Deep dive (every file, flows, decisions, debug history): `docs/PROJECT_GUIDE.md`.
 
 ## Architecture
 
