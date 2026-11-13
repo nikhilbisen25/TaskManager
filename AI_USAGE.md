@@ -123,4 +123,15 @@ with `CLAUDE.md` as standing project context.
 - Learned for the call: skip the local docker rebuild (6.5 min on this laptop); unit tests locally
   then let CI build the images.
 
+### 2026-11-13: Observability (logs + DB inspection)
+
+- Prompt (summary): "I want to see logs while a user adds tasks, the rows in both databases, and EC2/S3 logs."
+- Finding first: on EC2, task-service logged nothing per request and auth-service's real requests were
+  buried under a health-check line every 10 s.
+- Added: a request-log filter in task-service (runs before security so 401s are logged), action logs in
+  `TaskService`, auth events by user id (no emails/passwords), health-check filter; `deploy/ec2/logs.sh`,
+  `deploy/ec2/db.sh` (summary joins both DBs by user id in the shell, since they're separate databases),
+  `scripts/aws.sh` (laptop → SSM); guide in `docs/OBSERVABILITY.md`.
+- Verified: helper scripts run against the live RDS; tests green; new auth log lines checked natively.
+
 <!-- Next entries: AWS deploy + CI, rehearsed live changes (prompt, plan corrections, time to live). -->

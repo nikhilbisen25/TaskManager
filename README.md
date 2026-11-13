@@ -3,6 +3,7 @@
 **Live:** https://d1mc2pgndcz3na.cloudfront.net (AWS ap-south-1: CloudFront + S3, EC2, RDS)
 
 **Full implementation guide and study plan:** [docs/PROJECT_GUIDE.md](docs/PROJECT_GUIDE.md)
+**Logs and database inspection (local + AWS):** [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md)
 
 A small task management app: users register, log in, and manage their own tasks.
 Built as two independently deployable services plus a React SPA.

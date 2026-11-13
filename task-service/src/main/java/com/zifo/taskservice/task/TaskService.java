@@ -5,6 +5,8 @@ import static com.zifo.taskservice.task.TaskSpecifications.ownedBy;
 
 import java.util.UUID;
 
+import org.slf4j.Logger;
+import org.slf4j.LoggerFactory;
 import org.springframework.data.domain.Page;
 import org.springframework.data.domain.Pageable;
 import org.springframework.stereotype.Service;
@@ -18,6 +20,8 @@ import com.zifo.taskservice.task.dto.TaskDtos.UpdateTaskRequest;
 @Service
 @Transactional
 public class TaskService {
+
+    private static final Logger log = LoggerFactory.getLogger(TaskService.class);
 
     private final TaskRepository repository;
 
@@ -42,7 +46,9 @@ public class TaskService {
         task.setTitle(req.title().strip());
         task.setDescription(req.description());
         task.setStatus(req.status() != null ? req.status() : TaskStatus.TODO);
-        return TaskResponse.from(repository.save(task));
+        var saved = repository.save(task);
+        log.info("Task {} created by user {} (status {})", saved.getId(), ownerId, saved.getStatus());
+        return TaskResponse.from(saved);
     }
 
     public TaskResponse update(UUID ownerId, Long id, UpdateTaskRequest req) {
@@ -50,17 +56,20 @@ public class TaskService {
         task.setTitle(req.title().strip());
         task.setDescription(req.description());
         task.setStatus(req.status());
+        log.info("Task {} updated by user {}", id, ownerId);
         return TaskResponse.from(repository.saveAndFlush(task));
     }
 
     public TaskResponse updateStatus(UUID ownerId, Long id, TaskStatus status) {
         var task = findOwned(ownerId, id);
+        log.info("Task {} status {} -> {} by user {}", id, task.getStatus(), status, ownerId);
         task.setStatus(status);
         return TaskResponse.from(repository.saveAndFlush(task));
     }
 
     public void delete(UUID ownerId, Long id) {
         repository.delete(findOwned(ownerId, id));
+        log.info("Task {} deleted by user {}", id, ownerId);
     }
 
     private Task findOwned(UUID ownerId, Long id) {
