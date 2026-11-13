@@ -118,7 +118,11 @@ jobs:
 
   deploy-frontend:
     needs: [changes, test]
-    if: needs.changes.outputs.frontend == 'true'
+    # Also on backend-only changes, so the footer's "Build <sha>" always shows the latest deployed
+    # commit. Runs in parallel with the image builds, so it doesn't lengthen the pipeline.
+    if: >-
+      needs.changes.outputs.frontend == 'true' || needs.changes.outputs.auth == 'true' ||
+      needs.changes.outputs.task == 'true' || needs.changes.outputs.infra == 'true'
     runs-on: ubuntu-latest
     defaults:
       run:

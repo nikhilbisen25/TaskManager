@@ -514,7 +514,7 @@ changes (paths-filter: auth? task? frontend? infra?)
    ├── test (calls ci.yml) ───────────────┐
    ├── build-auth  (if auth changed) ─────┤──► deploy-backend (if tests pass, no build failed, backend/infra changed)
    ├── build-task  (if task changed) ─────┘       s3 sync deploy/ → SSM: sync to /opt/taskmanager, deploy.sh auth=<sha> task=<sha>
-   └── deploy-frontend (after test, if frontend changed)
+   └── deploy-frontend (after test, if anything deployable changed, so the footer SHA is always current)
           npm build (VITE_APP_VERSION=sha) → s3 sync assets (1-year cache) → index.html (no-cache) → invalidate /index.html
                                    └──────────────► smoke-test (scripts/smoke-test.sh https://$CF_DOMAIN)
 ```
